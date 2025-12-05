@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVIF/WebP to JPEG Batch Converter</title>
+    <style>
+        :root {
+            --bg: #0d1117; --card: #161b22; --text: #c9d1d9; --accent: #58a6ff; --green: #238636; }
+        body { 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: system-ui, -apple-system, sans-serif; 
+            margin: 0; padding: 20px; 
+        }
+        .container { max-width: 700px; margin: 0 auto; }
+        .card { 
+            background: var(--card); 
+            padding: 30px; 
+            border-radius: 16px; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            border: 1px solid #30363d;
+        }
+        h1 { text-align:center; margin:0 0 10px; color: #58a6ff; }
+        small { display:block; text-align:center; color:#8b949e; margin-bottom:20px; }
+        input[type="file"] { 
+            width:100%; padding:15px; background:#0d1117; border:2px dashed #30363d; border-radius:12px; color:white; 
+        }
+        label { display:block; margin:20px 0 8px; font-weight:600; }
+        select, input[type="number"], input[type="range"] { 
+            width:100%; padding:12px; background:#0d1117; border:1px solid #30363d; border-radius:8px; color:white; 
+        }
+        .row { display:flex; gap:15px; }
+        .row > div { flex:1; }
+        button { 
+            padding:14px; background:var(--accent); color:white; border:none; border-radius:12px; 
+            font-weight:bold; font-size:16px; cursor:pointer; margin-top:20px; 
+        }
+        button:hover { background:#1f6feb; }
+        button:disabled { background:#30363d; cursor:not-allowed; }
+        #progressContainer { 
+            height:10px; background:#21262d; border-radius:5px; overflow:hidden; margin:20px 0; display:none; 
+        }
+        #progressBar { height:100%; width:0%; background:var(--green); transition: width 0.3s; }
+        #results { margin-top:20px; }
+        .result-item { 
+            padding:12px; background:#0d1117; border-radius:8px; margin:8px 0; 
+            display:flex; justify-content:space-between; align-items:center; 
+        }
+        .download-link { color:var(--accent); text-decoration:none; font-weight:600; }
+        #qualityValue { float:right; color:#8b949e; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h1>AVIF/WebP/PNG → JPEG</h1>
+        <small>Batch Converter + Kompres Resolusi • Full Dark Mode • 100% Offline</small>
+
+        <input type="file" id="inputFiles" multiple accept="image/*" />
+
+        <label>Aksi yang mau dilakukan</label>
+        <select id="mode">
+            <option value="convert">Hanya Convert ke JPEG (tanpa resize)</option>
+            <option value="compress" selected>Convert + Kompres (resize + kualitas)</option>
+        </select>
+
+        <div id="compressOptions">
+            <label>Cara Resize</label>
+            <select id="resizeMode">
+                <option value="percent">Persentase (%)</option>
+                <option value="preset">Preset Cepat (1080p, 720p, dll)</option>
+                <option value="pixel">Custom Pixel</option>
+            </select>
+
+            <div id="percentOption">
+                <label>Skala Gambar</label>
+                <select id="percent">
+                    <option value="25">25%</option>
+                    <option value="50" selected>50%</option>
+                    <option value="75">75%</option>
+                    <option value="90">90%</option>
+                    <option value="100">100% (tanpa resize)</option>
+                </select>
+            </div>
+
+            <div id="presetOption" style="display:none;">
+                <label>Preset Populer</label>
+                <select id="presetRes">
+                    <option value="1920x1080">Full HD 1080p</option>
+                    <option value="1280x720">HD 720p</option>
+                    <option value="1080x1080">Instagram Square</option>
+                    <option value="1080x1920">Instagram Story / Reels</option>
+                    <option value="2560x1440">2K QHD</option>
+                    <option value="3840x2160">4K UHD</option>
+                </select>
+            </div>
+
+            <div id="pixelOption" style="display:none;">
+                <div class="row">
+                    <div><label>Lebar (px)</label><input type="number" id="customWidth" placeholder="1080" /></div>
+                    <div><label>Tinggi (px)</label><input type="number" id="customHeight" placeholder="1920" /></div>
+                </div>
+            </div>
+
+            <label>Kualitas JPEG <span id="qualityValue">92%</span></label>
+            <input type="range" id="quality" min="1" max="100" value="92" step="1" />
+        </div>
+
+        <button id="startBtn" onclick="startConversion()">MULAI CONVERT SEMUA</button>
+
+        <div id="progressContainer">
+            <div id="progressBar"></div>
+        </div>
+
+        <div id="results"></div>
+    </div>
+</div>
+
+<script>
+    const inputFiles = document.getElementById('inputFiles');
+    const mode = document.getElementById('mode');
+    const resizeMode = document.getElementById('resizeMode');
+    const percentOption = document.getElementById('percentOption');
+    const presetOption = document.getElementById('presetOption');
+    const pixelOption = document.getElementById('pixelOption');
+    const compressOptions = document.getElementById('compressOptions');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const results = document.getElementById('results');
+    const qualitySlider = document.getElementById('quality');
+    const qualityValue = document.getElementById('qualityValue');
+
+    qualitySlider.addEventListener('input', () => {
+        qualityValue.textContent = qualitySlider.value + '%';
+    });
+
+    mode.addEventListener('change', () => {
+        compressOptions.style.display = mode.value === 'compress' ? 'block' : 'none';
+    });
+
+    resizeMode.addEventListener('change', () => {
+        percentOption.style.display = resizeMode.value === 'percent' ? 'block' : 'none';
+        presetOption.style.display = resizeMode.value === 'preset' ? 'block' : 'none';
+        pixelOption.style.display = resizeMode.value === 'pixel' ? 'block' : 'none';
+    });
+
+    async function startConversion() {
+        const files = inputFiles.files;
+        if (files.length === 0) return alert("Pilih minimal 1 gambar bro!");
+
+        results.innerHTML = '';
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
+        document.getElementById('startBtn').disabled = true;
+
+        let completed = 0;
+
+        for (let i = 0; i < files.length; i++) {
+            await processSingleFile(files[i]);
+            completed++;
+            progressBar.style.width = ((completed / files.length) * 100) + '%';
+        }
+
+        progressContainer.style.display = 'none';
+        document.getElementById('startBtn').disabled = false;
+        alert(`Selesai! ${files.length} gambar berhasil diconvert`);
+    }
+
+    async function processSingleFile(file) {
+        const img = await createImageBitmap(file);
+
+        let width = img.width;
+        let height = img.height;
+
+        if (mode.value === 'compress') {
+            if (resizeMode.value === 'percent') {
+                const scale = parseInt(document.getElementById('percent').value) / 100;
+                width = Math.round(width * scale);
+                height = Math.round(height * scale);
+            } else if (resizeMode.value === 'preset') {
+                const [w, h] = document.getElementById('presetRes').value.split('x').map(Number);
+                width = w; height = h;
+            } else if (resizeMode.value === 'pixel') {
+                const w = parseInt(document.getElementById('customWidth').value) || width;
+                const h = parseInt(document.getElementById('customHeight').value) || height;
+                width = w; height = h;
+            }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        return new Promise((resolve) => {
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <span>\( {file.name} → \){newName} (\( {width}× \){height})</span>
+                    <a href="\( {url}" download=" \){newName}" class="download-link">Download</a>
+                `;
+                results.appendChild(item);
+                resolve();
+            }, 'image/jpeg', qualitySlider.value / 100);
+        });
+    }
+</script>
+</body>
+</html>
